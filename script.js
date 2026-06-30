@@ -1,367 +1,201 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>VOID HUNTER — FPS</title>
-<style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { background: #000; overflow: hidden; font-family: 'Courier New', monospace; }
-  #c { display: block; width: 100vw; height: 100vh; }
-  #hud {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    pointer-events: none; color: #0ff;
-  }
-  #crosshair {
-    position: absolute; top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    width: 20px; height: 20px;
-  }
-  #crosshair::before, #crosshair::after {
-    content: ''; position: absolute; background: rgba(0,255,255,0.8);
-  }
-  #crosshair::before { width: 2px; height: 20px; left: 9px; top: 0; }
-  #crosshair::after { width: 20px; height: 2px; left: 0; top: 9px; }
-  #health-bar {
-    position: absolute; bottom: 30px; left: 30px;
-    width: 200px;
-  }
-  #health-label { font-size: 11px; letter-spacing: 3px; margin-bottom: 6px; color: #0ff; }
-  #health-bg { width: 100%; height: 8px; background: rgba(0,255,255,0.15); border: 1px solid #0ff4; }
-  #health-fill { height: 100%; background: #0ff; transition: width 0.2s; width: 100%; }
-  #ammo {
-    position: absolute; bottom: 30px; right: 30px;
-    text-align: right; font-size: 36px; font-weight: bold;
-    color: #0ff; letter-spacing: -2px;
-    text-shadow: 0 0 20px #0ff8;
-  }
-  #ammo span { font-size: 14px; letter-spacing: 2px; display: block; opacity: 0.5; }
-  #score {
-    position: absolute; top: 30px; right: 30px;
-    font-size: 13px; letter-spacing: 3px; color: #0ff;
-    text-align: right;
-  }
-  #score .num { font-size: 32px; display: block; text-shadow: 0 0 20px #0ff8; }
-  #hit-flash {
-    position: absolute; inset: 0;
-    background: rgba(255,0,0,0);
-    transition: background 0.05s;
-    pointer-events: none;
-  }
-  #title-screen {
-    position: fixed; inset: 0;
-    background: #000;
-    display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    color: #0ff; z-index: 100;
-  }
-  #title-screen h1 {
-    font-size: 64px; letter-spacing: 12px;
-    text-shadow: 0 0 40px #0ff, 0 0 80px #0ff4;
-    animation: pulse 2s ease-in-out infinite;
-  }
-  #title-screen p { letter-spacing: 4px; opacity: 0.6; margin-top: 16px; font-size: 13px; }
-  #start-btn {
-    margin-top: 40px; padding: 14px 40px;
-    border: 2px solid #0ff; background: transparent;
-    color: #0ff; font-family: 'Courier New', monospace;
-    font-size: 14px; letter-spacing: 4px;
-    cursor: pointer; transition: all 0.2s;
-  }
-  #start-btn:hover { background: #0ff; color: #000; }
-  #controls-hint {
-    position: absolute; bottom: 80px; left: 50%;
-    transform: translateX(-50%);
-    font-size: 11px; letter-spacing: 3px; opacity: 0.4;
-    color: #0ff; white-space: nowrap;
-  }
-  #kills { font-size: 11px; letter-spacing: 3px; opacity: 0.7; }
-  @keyframes pulse {
-    0%,100% { text-shadow: 0 0 40px #0ff, 0 0 80px #0ff4; }
-    50% { text-shadow: 0 0 60px #0ff, 0 0 120px #0ff6, 0 0 200px #0ff2; }
-  }
-  #reload-msg {
-    position: absolute; bottom: 90px; right: 30px;
-    font-size: 11px; letter-spacing: 3px; color: #ff0;
-    display: none;
-    animation: blink 0.5s step-end infinite;
-  }
-  @keyframes blink { 50% { opacity: 0; } }
-  #wave-msg {
-    position: absolute; top: 50%; left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 28px; letter-spacing: 6px; color: #0ff;
-    text-shadow: 0 0 30px #0ff;
-    display: none; text-align: center;
-  }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>16-char Code Generator / Tester</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial; padding: 24px; max-width: 800px; margin: auto; }
+    h1 { margin-top: 0; }
+    .controls { display:flex; gap:8px; align-items:center; margin-bottom: 12px; }
+    button { padding:8px 12px; font-size:14px; }
+    input[type="number"] { width:80px; padding:6px; }
+    .list { margin-top:16px; border:1px solid #ddd; padding:8px; border-radius:6px; min-height:72px; background:#fafafa; }
+    .item { display:flex; align-items:center; gap:8px; padding:6px; border-radius:4px; margin-bottom:6px; }
+    .item .code { font-family: "Courier New", monospace; font-weight:600; }
+    .pending { background: #fffbe6; }    /* yellow-ish while checking */
+    .bad { background: #ffe8e8; color:#700; } /* red for fail */
+    .good { background: #e8ffea; color:#064; } /* green for success */
+    label.small { font-size:13px; color:#444; }
+    .info { margin-left:8px; color:#666; font-size:13px; }
+    .settings { display:flex; gap:12px; align-items:center; margin-left:12px; }
+    .footer { margin-top:18px; color:#666; font-size:13px; }
+  </style>
 </head>
 <body>
-<canvas id="c"></canvas>
-<div id="hud">
-  <div id="crosshair"></div>
-  <div id="hit-flash"></div>
-  <div id="health-bar">
-    <div id="health-label">SHIELDS</div>
-    <div id="health-bg"><div id="health-fill"></div></div>
+  <h1>16-character Code Generator & Tester</h1>
+
+  <div class="controls">
+    <button id="nextBtn">Next</button>
+    <button id="stopBtn" disabled>Stop</button>
+    <div class="settings">
+      <label class="small">Simulated success chance:
+        <input id="chance" type="number" min="0" max="100" value="5"> %
+      </label>
+      <span class="info">(Higher = more likely to stop quickly)</span>
+    </div>
   </div>
-  <div id="ammo">30<span>ROUNDS</span></div>
-  <div id="reload-msg">RELOADING...</div>
-  <div id="score"><div id="kills">KILLS</div><span class="num" id="score-num">0</span></div>
-  <div id="controls-hint">WASD · MOVE &nbsp;|&nbsp; MOUSE · AIM &nbsp;|&nbsp; CLICK · FIRE &nbsp;|&nbsp; R · RELOAD</div>
-  <div id="wave-msg" id="wave-msg"></div>
-</div>
-<div id="title-screen">
-  <h1>VOID HUNTER</h1>
-  <p>FIRST PERSON SHOOTER</p>
-  <button id="start-btn" onclick="startGame()">ENTER THE VOID</button>
-</div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script>
-let scene, camera, renderer, clock;
-let enemies = [], bullets = [], walls = [];
-let health = 100, ammo = 30, score = 0, reloading = false;
-let keys = {}, mouse = { x: 0, y: 0 }, yaw = 0, pitch = 0;
-let moveSpeed = 8, gameActive = false, wave = 1;
-const ENEMY_HP = [3,5,8];
+  <div>
+    <label class="small">Recent codes (first/oldest is removed when a code fails):</label>
+  </div>
+  <div id="list" class="list" aria-live="polite"></div>
 
-function startGame() {
-  document.getElementById('title-screen').style.display = 'none';
-  initThree();
-  buildArena();
-  spawnWave();
-  document.addEventListener('keydown', e => {
-    keys[e.code] = true;
-    if (e.code === 'KeyR' && !reloading && ammo < 30) reload();
-  });
-  document.addEventListener('keyup', e => keys[e.code] = false);
-  document.addEventListener('click', () => {
-    if (!gameActive) return;
-    if (!document.pointerLockElement) { document.body.requestPointerLock(); return; }
-    shoot();
-  });
-  document.addEventListener('mousemove', e => {
-    if (!document.pointerLockElement) return;
-    yaw -= e.movementX * 0.002;
-    pitch = Math.max(-1.2, Math.min(1.2, pitch - e.movementY * 0.002));
-  });
-  gameActive = true;
-  animate();
-}
+  <div class="footer">
+    How it works: Click Next to start. The app generates a 16-character alphanumeric code and "checks" it (simulated). If the check fails it marks the code red and then erases the first (oldest) code from the list and continues automatically; if a code passes the check it turns green and the process stops. Use the percentage input to set the simulated success probability.
+  </div>
 
-function initThree() {
-  scene = new THREE.Scene();
-  scene.fog = new THREE.FogExp2(0x000a0f, 0.06);
-  camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 200);
-  camera.position.set(0, 1.7, 0);
-  renderer = new THREE.WebGLRenderer({ canvas: document.getElementById('c'), antialias: true });
-  renderer.setSize(innerWidth, innerHeight);
-  renderer.setPixelRatio(devicePixelRatio);
-  renderer.shadowMap.enabled = true;
-  clock = new THREE.Clock();
-  scene.add(new THREE.AmbientLight(0x001122, 0.5));
-  let pt = new THREE.PointLight(0x0088ff, 2, 30);
-  pt.position.set(0, 8, 0);
-  scene.add(pt);
-  window.addEventListener('resize', () => {
-    camera.aspect = innerWidth/innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
-  });
-}
+  <script>
+    // --- Configuration / helpers ---
+    const CODE_LEN = 16;
+    const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    const nextBtn = document.getElementById('nextBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const listEl = document.getElementById('list');
+    const chanceInput = document.getElementById('chance');
 
-function buildArena() {
-  const floorG = new THREE.PlaneGeometry(60, 60);
-  const floorM = new THREE.MeshLambertMaterial({ color: 0x001a1a });
-  const floor = new THREE.Mesh(floorG, floorM);
-  floor.rotation.x = -Math.PI/2; scene.add(floor);
+    let running = false;
+    let stopRequested = false;
 
-  const ceilG = new THREE.PlaneGeometry(60, 60);
-  const ceil = new THREE.Mesh(ceilG, new THREE.MeshLambertMaterial({ color: 0x000d0d }));
-  ceil.rotation.x = Math.PI/2; ceil.position.y = 5; scene.add(ceil);
-
-  // Outer walls
-  const wallM = new THREE.MeshLambertMaterial({ color: 0x002233 });
-  const makeWall = (w, h, d, x, y, z) => {
-    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallM);
-    m.position.set(x, y, z); scene.add(m);
-    walls.push(m);
-  };
-  makeWall(60, 5, 1, 0, 2.5, -30);
-  makeWall(60, 5, 1, 0, 2.5, 30);
-  makeWall(1, 5, 60, -30, 2.5, 0);
-  makeWall(1, 5, 60, 30, 2.5, 0);
-
-  // Pillars
-  for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) {
-    if (Math.abs(i)+Math.abs(j) > 1) {
-      const p = new THREE.Mesh(new THREE.BoxGeometry(2, 5, 2),
-        new THREE.MeshLambertMaterial({ color: 0x003344 }));
-      p.position.set(i*10, 2.5, j*10); scene.add(p); walls.push(p);
+    function generateCode(len = CODE_LEN) {
+      let out = '';
+      const r = crypto.getRandomValues ? crypto.getRandomValues(new Uint32Array(len)) : null;
+      for (let i = 0; i < len; i++) {
+        if (r) {
+          out += CHARS[r[i] % CHARS.length];
+        } else {
+          out += CHARS[Math.floor(Math.random() * CHARS.length)];
+        }
+      }
+      return out;
     }
-  }
 
-  // Neon grid lines on floor
-  for (let i = -5; i <= 5; i++) {
-    const g = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(-30, 0.01, i*6), new THREE.Vector3(30, 0.01, i*6)
-    ]);
-    scene.add(new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0x003344 })));
-    const g2 = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(i*6, 0.01, -30), new THREE.Vector3(i*6, 0.01, 30)
-    ]);
-    scene.add(new THREE.Line(g2, new THREE.LineBasicMaterial({ color: 0x003344 })));
-  }
-}
-
-function spawnWave() {
-  const count = 5 + wave * 2;
-  for (let i = 0; i < count; i++) {
-    setTimeout(() => spawnEnemy(), i * 500);
-  }
-  const wm = document.getElementById('wave-msg');
-  wm.textContent = `WAVE ${wave}`;
-  wm.style.display = 'block';
-  setTimeout(() => wm.style.display = 'none', 2000);
-}
-
-function spawnEnemy() {
-  const tier = Math.min(wave - 1, 2);
-  const colors = [0xff2200, 0xff6600, 0xff00ff];
-  const geo = new THREE.BoxGeometry(0.8, 1.6, 0.8);
-  const mat = new THREE.MeshLambertMaterial({ color: colors[tier], emissive: colors[tier], emissiveIntensity: 0.3 });
-  const e = new THREE.Mesh(geo, mat);
-  const angle = Math.random() * Math.PI * 2;
-  const dist = 15 + Math.random() * 10;
-  e.position.set(Math.cos(angle)*dist, 0.8, Math.sin(angle)*dist);
-  e.userData = { hp: ENEMY_HP[tier], speed: 1.5 + wave * 0.3, tier };
-  // Eye lights
-  const eyeL = new THREE.PointLight(colors[tier], 1, 3);
-  eyeL.position.set(-0.2, 0.3, -0.5); e.add(eyeL);
-  scene.add(e); enemies.push(e);
-}
-
-function shoot() {
-  if (ammo <= 0) { reload(); return; }
-  ammo--;
-  document.getElementById('ammo').firstChild.textContent = ammo;
-
-  const dir = new THREE.Vector3(0, 0, -1);
-  dir.applyQuaternion(camera.quaternion);
-
-  // Muzzle flash
-  const flash = new THREE.PointLight(0xffaa00, 5, 8);
-  camera.add(flash);
-  setTimeout(() => camera.remove(flash), 50);
-  scene.add(camera);
-
-  // Raycast against enemies
-  const ray = new THREE.Raycaster(camera.position, dir);
-  const hits = ray.intersectObjects(enemies);
-  if (hits.length > 0) {
-    const e = hits[0].object;
-    e.userData.hp--;
-    flashHit();
-    if (e.userData.hp <= 0) killEnemy(e);
-  }
-
-  // Visual bullet tracer
-  const pts = [camera.position.clone(), camera.position.clone().addScaledVector(dir, 30)];
-  const lg = new THREE.BufferGeometry().setFromPoints(pts);
-  const line = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: 0xffff00, transparent: true, opacity: 0.8 }));
-  scene.add(line);
-  setTimeout(() => scene.remove(line), 80);
-}
-
-function flashHit() {
-  const f = document.getElementById('hit-flash');
-  f.style.background = 'rgba(255,0,0,0.3)';
-  setTimeout(() => f.style.background = 'rgba(255,0,0,0)', 80);
-}
-
-function killEnemy(e) {
-  scene.remove(e);
-  enemies = enemies.filter(x => x !== e);
-  score += (e.userData.tier + 1) * 10;
-  document.getElementById('score-num').textContent = score;
-
-  // Particle burst
-  for (let i = 0; i < 8; i++) {
-    const p = new THREE.Mesh(
-      new THREE.SphereGeometry(0.1),
-      new THREE.MeshBasicMaterial({ color: 0xff4400 })
-    );
-    p.position.copy(e.position);
-    p.userData.vel = new THREE.Vector3((Math.random()-0.5)*5, Math.random()*5, (Math.random()-0.5)*5);
-    p.userData.life = 0.5;
-    scene.add(p); bullets.push(p);
-  }
-
-  if (enemies.length === 0) {
-    wave++;
-    setTimeout(spawnWave, 2000);
-  }
-}
-
-function reload() {
-  if (reloading) return;
-  reloading = true;
-  document.getElementById('reload-msg').style.display = 'block';
-  setTimeout(() => {
-    ammo = 30;
-    reloading = false;
-    document.getElementById('ammo').firstChild.textContent = 30;
-    document.getElementById('reload-msg').style.display = 'none';
-  }, 2000);
-}
-
-function animate() {
-  requestAnimationFrame(animate);
-  const dt = clock.getDelta();
-  if (!gameActive) return;
-
-  // Player movement
-  const moveDir = new THREE.Vector3();
-  if (keys['KeyW']) moveDir.z -= 1;
-  if (keys['KeyS']) moveDir.z += 1;
-  if (keys['KeyA']) moveDir.x -= 1;
-  if (keys['KeyD']) moveDir.x += 1;
-  moveDir.normalize().multiplyScalar(moveSpeed * dt);
-  moveDir.applyEuler(new THREE.Euler(0, yaw, 0));
-  const np = camera.position.clone().add(moveDir);
-  if (Math.abs(np.x) < 28 && Math.abs(np.z) < 28) camera.position.copy(np);
-  camera.rotation.order = 'YXZ';
-  camera.rotation.y = yaw;
-  camera.rotation.x = pitch;
-
-  // Enemy AI
-  enemies.forEach(e => {
-    const dir = camera.position.clone().sub(e.position).setY(0).normalize();
-    e.position.addScaledVector(dir, e.userData.speed * dt);
-    e.lookAt(camera.position);
-    if (e.position.distanceTo(camera.position) < 1.2) {
-      health -= 15 * dt;
-      health = Math.max(0, health);
-      document.getElementById('health-fill').style.width = health + '%';
-      document.getElementById('hit-flash').style.background = 'rgba(255,0,0,0.15)';
-      setTimeout(() => document.getElementById('hit-flash').style.background = '', 100);
+    function addItem(code, state = 'pending') {
+      const el = document.createElement('div');
+      el.className = 'item ' + state;
+      const codeSpan = document.createElement('span');
+      codeSpan.className = 'code';
+      codeSpan.textContent = code;
+      const stateSpan = document.createElement('span');
+      stateSpan.className = 'state';
+      stateSpan.textContent = state === 'pending' ? 'checking...' : (state === 'good' ? 'GOOD' : 'BAD');
+      el.appendChild(codeSpan);
+      el.appendChild(stateSpan);
+      listEl.appendChild(el);
+      return el;
     }
-  });
 
-  // Particle update
-  bullets = bullets.filter(p => {
-    if (p.userData.life !== undefined) {
-      p.userData.life -= dt;
-      p.userData.vel.y -= 9.8 * dt;
-      p.position.addScaledVector(p.userData.vel, dt);
-      if (p.userData.life <= 0) { scene.remove(p); return false; }
-      return true;
+    function removeFirstItem() {
+      const first = listEl.firstElementChild;
+      if (first) first.remove();
     }
-    return false;
-  });
 
-  renderer.render(scene, camera);
-}
-</script>
+    // Simulated validator: returns a Promise<boolean>
+    // Uses the chance input: percentage chance to return true.
+    function validateCodeSimulated(code) {
+      const chance = Number(chanceInput.value) || 0;
+      // simulate network/processing delay 200-700ms
+      const delay = 200 + Math.random() * 500;
+      return new Promise(resolve => {
+        setTimeout(() => {
+          // success if random < chance%
+          const success = (Math.random() * 100) < chance;
+          resolve(!!success);
+        }, delay);
+      });
+    }
+
+    // The main loop: generate a code, add to list, validate.
+    async function iterateOnce() {
+      if (stopRequested) return false;
+      const code = generateCode();
+      const itemEl = addItem(code, 'pending');
+      // mark visually while checking
+      await sleep(60); // tiny UX delay so pending shows
+      const ok = await validateCodeSimulated(code);
+      if (ok) {
+        itemEl.classList.remove('pending');
+        itemEl.classList.add('good');
+        itemEl.querySelector('.state').textContent = 'GOOD';
+        // stop the process
+        running = false;
+        stopRequested = false;
+        nextBtn.disabled = false;
+        stopBtn.disabled = true;
+        return true;
+      } else {
+        // mark as bad
+        itemEl.classList.remove('pending');
+        itemEl.classList.add('bad');
+        itemEl.querySelector('.state').textContent = 'BAD';
+        // remove the first (oldest) code from list after small delay
+        await sleep(180);
+        removeFirstItem();
+        // continue (return false to indicate not done)
+        return false;
+      }
+    }
+
+    async function runLoop() {
+      running = true;
+      stopRequested = false;
+      nextBtn.disabled = true;
+      stopBtn.disabled = false;
+      while (!stopRequested) {
+        const done = await iterateOnce();
+        if (done) break;
+        // small throttle so UI doesn't starve
+        await sleep(80);
+      }
+      // ensure buttons reflect state
+      running = false;
+      nextBtn.disabled = false;
+      stopBtn.disabled = true;
+    }
+
+    // Basic sleep helper
+    function sleep(ms) { return new Promise(res => setTimeout(res, ms)); }
+
+    // UI event handlers
+    nextBtn.addEventListener('click', () => {
+      if (!running) {
+        // clear previous list and start
+        // depending on desired behaviour we can clear or keep; spec implies older ones erased when fail
+        // We'll keep the existing list but the loop will remove items when failures happen.
+        runLoop();
+      }
+    });
+
+    stopBtn.addEventListener('click', () => {
+      if (running) {
+        stopRequested = true;
+        // let the current check finish then stop; user can also disable immediately:
+        // To immediate stop: uncomment the line below:
+        // running = false;
+      }
+    });
+
+    // Allow pressing Enter on the chance input to start
+    chanceInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        if (!running) runLoop();
+      }
+    });
+
+    // seed the list with nothing initially; optional quick demo: keep empty
+
+    // Accessibility: announce when a code becomes GOOD
+    const observer = new MutationObserver(muts => {
+      for (const m of muts) {
+        for (const n of m.addedNodes) {
+          if (n.nodeType === 1 && n.classList.contains('good')) {
+            n.setAttribute('aria-live','polite');
+          }
+        }
+      }
+    });
+    observer.observe(listEl, { childList: true, subtree: true });
+
+  </script>
 </body>
 </html>
