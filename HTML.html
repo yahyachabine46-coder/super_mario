@@ -1,201 +1,314 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>16-char Code Generator / Tester</title>
-  <style>
-    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial; padding: 24px; max-width: 800px; margin: auto; }
-    h1 { margin-top: 0; }
-    .controls { display:flex; gap:8px; align-items:center; margin-bottom: 12px; }
-    button { padding:8px 12px; font-size:14px; }
-    input[type="number"] { width:80px; padding:6px; }
-    .list { margin-top:16px; border:1px solid #ddd; padding:8px; border-radius:6px; min-height:72px; background:#fafafa; }
-    .item { display:flex; align-items:center; gap:8px; padding:6px; border-radius:4px; margin-bottom:6px; }
-    .item .code { font-family: "Courier New", monospace; font-weight:600; }
-    .pending { background: #fffbe6; }    /* yellow-ish while checking */
-    .bad { background: #ffe8e8; color:#700; } /* red for fail */
-    .good { background: #e8ffea; color:#064; } /* green for success */
-    label.small { font-size:13px; color:#444; }
-    .info { margin-left:8px; color:#666; font-size:13px; }
-    .settings { display:flex; gap:12px; align-items:center; margin-left:12px; }
-    .footer { margin-top:18px; color:#666; font-size:13px; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pip’s Pipe Dream</title>
+<style>
+:root{--bg:#f1efe8;--fg:#22211e;--btn:#fff;--bd:#cdc8ba;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#14161b;--fg:#ecebe6;--btn:#242730;--bd:#3b3f4a}}
+:root[data-theme="dark"]{--bg:#14161b;--fg:#ecebe6;--btn:#242730;--bd:#3b3f4a}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;overflow:hidden}
+canvas{width:min(96vw,calc((100vh - 150px)*1.818));height:auto;aspect-ratio:640/352;image-rendering:pixelated;border:2px solid var(--bd);border-radius:8px;touch-action:none;background:#6ec6ff}
+#hint{margin:0;font-size:13px;opacity:.75}
+#pad{display:none;width:min(96vw,640px);justify-content:space-between;gap:8px}
+#pad div{display:flex;gap:8px}
+#pad button{min-width:68px;height:58px;border-radius:14px;border:1px solid var(--bd);background:var(--btn);color:var(--fg);font:700 16px system-ui,sans-serif;touch-action:none;user-select:none;-webkit-user-select:none}
+#pad button:active{transform:scale(.94)}
+@media (pointer:coarse){#pad{display:flex}#hint{display:none}canvas{width:min(96vw,calc((100vh - 130px)*1.818))}}
+</style>
 </head>
 <body>
-  <h1>16-character Code Generator & Tester</h1>
+<canvas id="c" width="640" height="352"></canvas>
+<p id="hint">← → move · Space or ↑ jump (hold for higher) · Shift run · M mute · S shop (title screen)</p>
+<div id="pad"><div><button data-k="left">◀</button><button data-k="right">▶</button></div><div><button data-k="run">RUN</button><button data-k="jump">JUMP</button></div></div>
+<script>
+const TS=32,COLS=150,ROWS=11,W=640,H=352,SOL='#B?UPTS';
+const cv=document.getElementById('c'),ctx=cv.getContext('2d');
+let map,enemies,bumps,pops,cam,p,flagX,state='title',score=0,coins=0,lives=3,time=200,tick=0,frame=0,wt=0,hi=0,muted=false,jumpHeld=0;
+try{hi=+localStorage.getItem('pip_hi')||0}catch(e){}
+const keys={left:0,right:0,jump:0,run:0};
+const KM={ArrowLeft:'left',KeyA:'left',ArrowRight:'right',KeyD:'right',ArrowUp:'jump',KeyW:'jump',Space:'jump',KeyZ:'jump',ShiftLeft:'run',ShiftRight:'run',KeyX:'run'};
 
-  <div class="controls">
-    <button id="nextBtn">Next</button>
-    <button id="stopBtn" disabled>Stop</button>
-    <div class="settings">
-      <label class="small">Simulated success chance:
-        <input id="chance" type="number" min="0" max="100" value="5"> %
-      </label>
-      <span class="info">(Higher = more likely to stop quickly)</span>
-    </div>
-  </div>
+/* ---------- sound ---------- */
+let ac;
+function beep(f,d,t,v,f2,delay){if(muted)return;try{ac=ac||new(window.AudioContext||window.webkitAudioContext)();const s=ac.currentTime+(delay||0),o=ac.createOscillator(),g=ac.createGain();o.type=t||'square';o.frequency.setValueAtTime(f,s);if(f2)o.frequency.exponentialRampToValueAtTime(f2,s+d);g.gain.setValueAtTime(v||.05,s);g.gain.exponentialRampToValueAtTime(.001,s+d);o.connect(g);g.connect(ac.destination);o.start(s);o.stop(s+d)}catch(e){}}
+const sfx={jump:()=>beep(300,.18,'square',.05,720),coin:()=>{beep(988,.07);beep(1319,.2,'square',.05,0,.07)},stomp:()=>beep(220,.12,'square',.06,80),bump:()=>beep(130,.1,'triangle',.08),die:()=>beep(420,.7,'sawtooth',.05,60),win:()=>[523,659,784,1047].forEach((f,i)=>beep(f,.18,'square',.05,0,i*.12)),up:()=>[660,880,1320].forEach((f,i)=>beep(f,.12,'square',.05,0,i*.09))};
 
-  <div>
-    <label class="small">Recent codes (first/oldest is removed when a code fails):</label>
-  </div>
-  <div id="list" class="list" aria-live="polite"></div>
+/* ---------- shop ---------- */
+const ITEMS=[
+ {id:'life',name:'Extra Life',desc:'Start each run with +1 life',price:30,max:3},
+ {id:'jump',name:'Spring Shoes',desc:'Jump higher',price:60,max:1},
+ {id:'boots',name:'Speed Boots',desc:'Run faster',price:80,max:1},
+ {id:'time',name:'Stopwatch',desc:'+50 seconds on the clock',price:40,max:1},
+ {id:'shield',name:'Shield',desc:'Survive one hit per life',price:100,max:1},
+ {id:'cap_green',type:'cap',name:'Green Cap',color:'#2e9e5b',price:0},
+ {id:'cap_blue',type:'cap',name:'Blue Cap',color:'#3a9be8',price:25},
+ {id:'cap_pink',type:'cap',name:'Pink Cap',color:'#ea5a9c',price:25},
+ {id:'cap_gold',type:'cap',name:'Gold Cap',color:'#e8b923',price:50}];
+let wallet=0,own={},sel=0,shopFrom='title';
+try{wallet=+localStorage.getItem('pip_wallet')||0;own=JSON.parse(localStorage.getItem('pip_own')||'{}')||{}}catch(e){}
+const saveShop=()=>{try{localStorage.setItem('pip_wallet',wallet);localStorage.setItem('pip_own',JSON.stringify(own))}catch(e){}};
+const owned=it=>it.price===0?1:own[it.id]||0;
+function openShop(){shopFrom=state;state='shop';sel=0}
+function act(i){
+  const it=ITEMS[i],cap=it.type==='cap',n=owned(it);
+  if(cap&&n){own.cap=it.id;saveShop();sfx.bump();return}
+  if(!cap&&n>=it.max)return;
+  if(wallet<it.price){beep(160,.15,'sawtooth',.05);return}
+  wallet-=it.price;own[it.id]=n+1;if(cap)own.cap=it.id;saveShop();sfx.up();
+}
+function shopKey(k){
+  const n=ITEMS.length;
+  if(k==='ArrowUp'||k==='KeyW')sel=(sel+n-1)%n;
+  else if(k==='ArrowDown'||k==='KeyS')sel=(sel+1)%n;
+  else if(k==='Enter'||k==='Space')act(sel);
+  else if(k==='Escape'||k==='KeyB')state=shopFrom;
+}
+function shopTap(x,y){
+  if(y>=316){state=shopFrom;return}
+  const i=Math.floor((y-50)/29);
+  if(i>=0&&i<ITEMS.length){sel=i;act(i)}
+}
+function drawShopBtn(){
+  ctx.fillStyle='#ffd23f';ctx.fillRect(230,262,180,32);
+  ctx.font='bold 16px ui-monospace,Menlo,Consolas,monospace';ctx.textAlign='center';ctx.fillStyle='#3a2a00';ctx.fillText('Shop (S)',W/2,284);
+}
+function drawShop(){
+  ctx.fillStyle='rgba(10,12,24,.95)';ctx.fillRect(0,0,W,H);
+  text('SHOP',24,34,24);text('●×'+wallet,W-24,34,20,'right','#ffd23f');
+  ITEMS.forEach((it,i)=>{
+    const y=50+i*29,n=owned(it),cap=it.type==='cap',eq=cap&&(own.cap||'cap_green')===it.id,full=cap?n>0:n>=it.max;
+    ctx.fillStyle=i===sel?'rgba(255,210,63,.22)':'rgba(255,255,255,.07)';ctx.fillRect(16,y,W-32,26);
+    if(i===sel){ctx.strokeStyle='#ffd23f';ctx.lineWidth=2;ctx.strokeRect(16,y,W-32,26)}
+    if(cap){ctx.fillStyle=it.color;ctx.fillRect(24,y+7,14,12)}
+    text(it.name+(it.max>1?'  '+n+'/'+it.max:''),cap?46:28,y+18,14);
+    text(it.desc||'',250,y+18,12,'left','#c3c9d6');
+    const lbl=cap?(eq?'EQUIPPED':n?'EQUIP':'●'+it.price):(full?'OWNED':'●'+it.price);
+    text(lbl,W-26,y+18,14,'right',(cap?n:full)?'#9be39b':wallet>=it.price?'#ffd23f':'#ff8a80');
+  });
+  text('↑↓ choose · Enter buy or equip · Esc back (or tap)',W/2,338,13,'center','#c3c9d6');
+}
 
-  <div class="footer">
-    How it works: Click Next to start. The app generates a 16-character alphanumeric code and "checks" it (simulated). If the check fails it marks the code red and then erases the first (oldest) code from the list and continues automatically; if a code passes the check it turns green and the process stops. Use the percentage input to set the simulated success probability.
-  </div>
+/* ---------- level ---------- */
+function build(){
+  map=Array.from({length:ROWS},()=>Array(COLS).fill(' '));
+  const s=(c,r,t)=>{if(c>=0&&c<COLS&&r>=0&&r<ROWS)map[r][c]=t};
+  const row=(c,r,str)=>[...str].forEach((t,i)=>s(c+i,r,t));
+  const pipe=(c,h)=>{for(let i=0;i<h;i++){const t=i?'P':'T';s(c,9-h+i,t);s(c+1,9-h+i,t)}};
+  const gaps=[[30,31],[54,56],[80,82],[106,108]];
+  for(let c=0;c<COLS;c++){if(gaps.some(g=>c>=g[0]&&c<=g[1]))continue;s(c,9,'#');s(c,10,'#')}
+  row(9,6,'?B?B?');s(11,3,'?');row(17,5,'oooo');
+  pipe(18,2);pipe(25,3);
+  row(34,6,'B?B');row(38,5,'BBBB');row(44,6,'?');row(39,2,'oo');
+  pipe(41,2);pipe(49,3);
+  s(54,6,'o');s(55,5,'o');s(56,6,'o');
+  row(60,6,'B?B?B?B');row(64,3,'BBBB');row(64,2,'oooo');
+  pipe(70,2);pipe(75,3);
+  s(80,6,'o');s(81,5,'o');s(82,6,'o');
+  row(86,6,'?B?');row(88,3,'?');
+  for(let i=0;i<4;i++){for(let h=1;h<=i+1;h++)s(94+i,9-h,'S');for(let h=1;h<=4-i;h++)s(99+i,9-h,'S')}
+  s(106,6,'o');s(107,5,'o');s(108,6,'o');
+  pipe(112,3);pipe(118,2);row(114,5,'oo');
+  row(120,6,'B?B');row(120,5,'ooo');
+  for(let i=0;i<8;i++)for(let h=1;h<=i+1;h++)s(130+i,9-h,'S');
+  flagX=143*TS+14;
+  enemies=[15,22,33,37,43,48,58,62,66,72,78,84,87,92,102,110,116,123,127].map(c=>({x:c*TS+3,y:0,w:26,h:26,vx:-.6,vy:0,alive:true,sq:0}));
+  p={x:2*TS,y:9*TS-30,w:22,h:30,vx:0,vy:0,face:1,ground:true,coy:0,isP:true,dt:0};
+  bumps=[];pops=[];cam=0;time=200+(own.time?50:0);tick=0;jumpHeld=0;p.shield=!!own.shield;p.inv=0;
+}
+const solid=(c,r)=>c<0||c>=COLS?true:(r<0||r>=ROWS?false:SOL.includes(map[r][c]));
 
-  <script>
-    // --- Configuration / helpers ---
-    const CODE_LEN = 16;
-    const CHARS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    const nextBtn = document.getElementById('nextBtn');
-    const stopBtn = document.getElementById('stopBtn');
-    const listEl = document.getElementById('list');
-    const chanceInput = document.getElementById('chance');
+/* ---------- physics ---------- */
+function moveX(e){
+  if(!e.vx)return false;
+  e.x+=e.vx;
+  const y0=Math.floor(e.y/TS),y1=Math.floor((e.y+e.h-1)/TS),c=Math.floor((e.vx>0?e.x+e.w-1:e.x)/TS);
+  for(let r=y0;r<=y1;r++)if(solid(c,r)){e.x=e.vx>0?c*TS-e.w:(c+1)*TS;return true}
+  return false;
+}
+function moveY(e){
+  e.y+=e.vy;e.ground=false;
+  const x0=Math.floor(e.x/TS),x1=Math.floor((e.x+e.w-1)/TS),mid=Math.floor((e.x+e.w/2)/TS);
+  const r=Math.floor((e.vy>0?e.y+e.h-1:e.y)/TS);
+  let hit=-1;
+  for(let c=x0;c<=x1;c++)if(solid(c,r)&&(hit<0||c===mid))hit=c;
+  if(hit>=0){
+    if(e.vy>0){e.y=r*TS-e.h;e.ground=true}
+    else{e.y=(r+1)*TS;if(e.isP)bump(hit,r)}
+    e.vy=0;
+  }
+}
+function bump(c,r){
+  const t=map[r][c];
+  if(t==='?'){map[r][c]='U';pops.push({x:c*TS+16,y:r*TS-6,vy:-6,life:28});getCoin();score+=200;sfx.coin()}
+  else if(t==='B')sfx.bump();
+  else return;
+  bumps.push({c,r,t:10});
+}
+function getCoin(){coins++;wallet++;saveShop();if(coins%20===0){lives++;sfx.up()}}
 
-    let running = false;
-    let stopRequested = false;
+/* ---------- state ---------- */
+function start(){score=0;coins=0;lives=3+(own.life||0);build();state='play'}
+function die(){if(state!=='play')return;state='dead';p.vy=-9;p.dt=100;sfx.die()}
+function saveHi(){if(score>hi){hi=score;try{localStorage.setItem('pip_hi',hi)}catch(e){}}}
 
-    function generateCode(len = CODE_LEN) {
-      let out = '';
-      const r = crypto.getRandomValues ? crypto.getRandomValues(new Uint32Array(len)) : null;
-      for (let i = 0; i < len; i++) {
-        if (r) {
-          out += CHARS[r[i] % CHARS.length];
-        } else {
-          out += CHARS[Math.floor(Math.random() * CHARS.length)];
-        }
-      }
-      return out;
+function update(){
+  frame++;
+  for(const b of bumps)b.t--;bumps=bumps.filter(b=>b.t>0);
+  for(const o of pops){o.y+=o.vy;o.vy+=.5;o.life--}pops=pops.filter(o=>o.life>0);
+  if(state==='dead'){p.vy+=.4;p.y+=p.vy;if(--p.dt<=0){if(--lives<=0){state='over';saveHi()}else{build();state='play'}}return}
+  if(state==='win'){winStep();return}
+  if(state!=='play')return;
+
+  const dir=keys.right-keys.left,maxV=(keys.run?3.7:2.5)+(own.boots?.7:0);
+  if(dir){p.vx+=dir*(p.ground?.25:.18);p.face=dir}
+  else{p.vx*=p.ground?.8:.97;if(Math.abs(p.vx)<.05)p.vx=0}
+  p.vx=Math.max(-maxV,Math.min(maxV,p.vx));
+  p.coy=p.ground?6:p.coy-1;
+  if(keys.jump&&!jumpHeld&&p.coy>0){p.vy=own.jump?-12.7:-11.5;p.coy=0;p.ground=false;sfx.jump()}
+  jumpHeld=keys.jump;if(p.inv>0)p.inv--;
+  if(!keys.jump&&p.vy<-4)p.vy=-4;
+  p.vy=Math.min(p.vy+.5,11);
+  if(moveX(p))p.vx=0;
+  if(p.x<cam){p.x=cam;p.vx=Math.max(0,p.vx)}
+  moveY(p);
+  if(p.y>H+40){p.vy=0;die();return}
+
+  const x0=Math.floor(p.x/TS),x1=Math.floor((p.x+p.w-1)/TS),y0=Math.floor(p.y/TS),y1=Math.floor((p.y+p.h-1)/TS);
+  for(let r=y0;r<=y1;r++)for(let c=x0;c<=x1;c++)if(map[r]&&map[r][c]==='o'){map[r][c]=' ';getCoin();score+=100;sfx.coin()}
+
+  for(const e of enemies){
+    if(!e.alive){e.sq--;continue}
+    if(e.x>cam+W+64)continue;
+    if(e.x<cam-200){e.alive=false;e.sq=0;continue}
+    e.vy=Math.min(e.vy+.5,10);
+    if(moveX(e))e.vx=-e.vx;
+    moveY(e);
+    if(e.y>H+40){e.alive=false;e.sq=0;continue}
+    if(p.x<e.x+e.w&&p.x+p.w>e.x&&p.y<e.y+e.h&&p.y+p.h>e.y){
+      if(p.vy>0&&p.y+p.h-e.y<18+p.vy){e.alive=false;e.sq=25;p.vy=keys.jump?-10:-7;score+=100;sfx.stomp()}
+      else if(p.inv<=0){if(p.shield){p.shield=false;p.inv=90;p.vy=-6;sfx.bump()}else{die();return}}
     }
+  }
+  enemies=enemies.filter(e=>e.alive||e.sq>0);
 
-    function addItem(code, state = 'pending') {
-      const el = document.createElement('div');
-      el.className = 'item ' + state;
-      const codeSpan = document.createElement('span');
-      codeSpan.className = 'code';
-      codeSpan.textContent = code;
-      const stateSpan = document.createElement('span');
-      stateSpan.className = 'state';
-      stateSpan.textContent = state === 'pending' ? 'checking...' : (state === 'good' ? 'GOOD' : 'BAD');
-      el.appendChild(codeSpan);
-      el.appendChild(stateSpan);
-      listEl.appendChild(el);
-      return el;
-    }
+  if(p.x+p.w>=flagX){
+    state='win';wt=0;p.x=flagX-p.w;p.vx=0;p.vy=0;
+    score+=Math.max(1,Math.round((9*TS-p.y)/TS))*500;sfx.win();
+  }
+  cam=Math.max(cam,Math.min(p.x-W*.4,COLS*TS-W));
+  if(++tick%60===0&&--time<=0){time=0;die()}
+}
+function winStep(){
+  wt++;
+  if(wt<60)p.y=Math.min(p.y+2.5,9*TS-p.h);
+  else if(wt===60){score+=time*10;time=0;saveHi()}
+  else if(p.x<147*TS+20){p.x+=1.6;p.face=1;p.ground=true}
+  cam=Math.max(cam,Math.min(p.x-W*.4,COLS*TS-W));
+}
 
-    function removeFirstItem() {
-      const first = listEl.firstElementChild;
-      if (first) first.remove();
-    }
+/* ---------- drawing ---------- */
+function text(s,x,y,size,align,col){
+  ctx.font='bold '+size+'px ui-monospace,Menlo,Consolas,monospace';ctx.textAlign=align||'left';
+  ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillText(s,x+2,y+2);ctx.fillStyle=col||'#fff';ctx.fillText(s,x,y);
+}
+function tile(t,x,y,c,r){
+  const f=(col,a,b,w,h)=>{ctx.fillStyle=col;ctx.fillRect(x+a,y+b,w,h)};
+  if(t==='#'){f('#b9692a',0,0,TS,TS);f('rgba(0,0,0,.16)',0,TS-2,TS,2);f('rgba(0,0,0,.16)',TS-2,0,2,TS);if(r===9){f('#4fb24a',0,0,TS,8);f('#7fd66f',0,0,TS,3)}else{f('rgba(0,0,0,.12)',6,10,6,4);f('rgba(0,0,0,.12)',20,20,6,4)}}
+  else if(t==='B'){f('#c9531f',0,0,TS,TS);f('#6e2610',0,0,TS,2);f('#6e2610',0,15,TS,2);f('#6e2610',0,30,TS,2);f('#6e2610',15,0,2,15);f('#6e2610',7,17,2,15);f('#6e2610',23,17,2,15)}
+  else if(t==='?'){f('#8a5a00',0,0,TS,TS);f('#f7b928',2,2,TS-4,TS-4);f('#ffe27a',2,2,TS-4,3);ctx.font='bold 22px ui-monospace,monospace';ctx.textAlign='center';ctx.fillStyle='#fff';ctx.fillText('?',x+16,y+24)}
+  else if(t==='U'){f('#5d4524',0,0,TS,TS);f('#9b7a47',2,2,TS-4,TS-4)}
+  else if(t==='S'){f('#7b828a',0,0,TS,TS);f('#c4cad1',0,0,TS,3);f('#c4cad1',0,0,3,TS);f('#555b62',0,TS-3,TS,3);f('#555b62',TS-3,0,3,TS)}
+  else if(t==='P'||t==='T'){
+    const right=map[r][c-1]===t;
+    f('#2ca64a',0,0,TS,TS);f('#74dc8c',right?8:6,0,5,TS);f('#14602c',right?TS-3:0,0,3,TS);
+    if(t==='T'){f('#14602c',0,0,TS,2);f('#14602c',0,TS-2,TS,2)}
+  }
+  else if(t==='o'){const w=Math.abs(Math.cos(frame/14+c))*8+2;ctx.fillStyle='#ffd23f';ctx.beginPath();ctx.ellipse(x+16,y+16,w,10,0,0,7);ctx.fill();ctx.strokeStyle='#b8860b';ctx.lineWidth=2;ctx.stroke()}
+}
+function drawPlayer(){
+  const x=Math.round(p.x-cam),y=Math.round(p.y);if(p.inv>0&&frame%6<3)return;if(p.shield){ctx.strokeStyle='rgba(120,220,255,.9)';ctx.lineWidth=2;ctx.beginPath();ctx.arc(x+11,y+16,20,0,7);ctx.stroke()}
+  ctx.save();ctx.translate(x+11,y);ctx.scale(p.face,1);ctx.translate(-11,0);
+  const f=(c,a,b,w,h)=>{ctx.fillStyle=c;ctx.fillRect(a,b,w,h)};
+  const cc=(ITEMS.find(i=>i.id===own.cap)||ITEMS[5]).color;f(cc,2,0,18,8);f(cc,10,6,14,3);f('#fff',7,2,4,4);
+  f('#f2c39b',4,8,16,9);f('#222',14,10,3,3);f('#8a5a2b',2,8,4,6);
+  f('#f0b429',0,17,22,4);f('#f0b429',0,19,4,6);f('#f0b429',18,19,4,6);f('#2f6fd6',4,19,14,7);
+  const w=!p.ground?3:(Math.abs(p.vx)>.3?(Math.floor(frame/6)%2)*3:0);
+  f('#5b3a1e',2+w,26,8,4);f('#5b3a1e',12-w,26,8,4);
+  ctx.restore();
+}
+function drawEnemy(e){
+  const x=Math.round(e.x-cam),y=Math.round(e.y);
+  if(!e.alive){ctx.fillStyle='#8e4fd0';ctx.fillRect(x,y+18,26,8);return}
+  ctx.fillStyle='#8e4fd0';ctx.beginPath();ctx.arc(x+13,y+14,13,Math.PI,0);ctx.fill();ctx.fillRect(x,y+14,26,7);
+  ctx.fillStyle='#fff';ctx.fillRect(x+5,y+9,6,7);ctx.fillRect(x+15,y+9,6,7);
+  ctx.fillStyle='#111';ctx.fillRect(x+7,y+12,3,4);ctx.fillRect(x+17,y+12,3,4);
+  ctx.fillRect(x+4,y+6,3,2);ctx.fillRect(x+7,y+7,4,2);ctx.fillRect(x+19,y+6,3,2);ctx.fillRect(x+15,y+7,4,2);
+  const q=Math.floor(frame/10)%2;ctx.fillStyle='#4a2878';ctx.fillRect(x+(q?1:4),y+21,9,5);ctx.fillRect(x+(q?16:13),y+21,9,5);
+}
+function draw(){
+  const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#5db6f5');g.addColorStop(1,'#c4ebff');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  for(let i=0;i<14;i++){const hx=i*380-cam*.55;if(hx>W+160||hx<-260)continue;ctx.fillStyle=i%2?'#5cb85c':'#4aa54a';ctx.beginPath();ctx.arc(hx+100,9*TS,80+(i%2)*30,Math.PI,0);ctx.fill()}
+  for(let i=0;i<14;i++){const cx=i*260+60-cam*.35;if(cx<-120||cx>W+40)continue;const cy=40+(i%3)*30;ctx.fillStyle='rgba(255,255,255,.92)';ctx.beginPath();ctx.arc(cx,cy,16,0,7);ctx.arc(cx+22,cy-8,20,0,7);ctx.arc(cx+46,cy,16,0,7);ctx.fill();ctx.fillRect(cx,cy,46,16)}
+  // castle + flag
+  const cx=147*TS-cam;ctx.fillStyle='#8d6e63';ctx.fillRect(cx,6*TS,3*TS,3*TS);for(let i=0;i<3;i++)ctx.fillRect(cx+i*TS+4,6*TS-10,16,10);ctx.fillStyle='#3e2723';ctx.beginPath();ctx.arc(cx+48,8*TS-4,14,Math.PI,0);ctx.fillRect(cx+34,8*TS-4,28,36);ctx.fill();
+  const fx=flagX-cam;ctx.fillStyle='#cfd8dc';ctx.fillRect(fx,2*TS,4,7*TS);ctx.fillStyle='#ffd23f';ctx.beginPath();ctx.arc(fx+2,2*TS-4,6,0,7);ctx.fill();
+  const fy=state==='win'?Math.min(2*TS+10+wt*3,8*TS-26):2*TS+10;ctx.fillStyle='#e53935';ctx.beginPath();ctx.moveTo(fx,fy);ctx.lineTo(fx-30,fy+13);ctx.lineTo(fx,fy+26);ctx.fill();
+  // tiles
+  const c0=Math.max(0,Math.floor(cam/TS)),c1=Math.min(COLS-1,c0+Math.ceil(W/TS)+1);
+  for(let r=0;r<ROWS;r++)for(let c=c0;c<=c1;c++){
+    const t=map[r][c];if(t===' ')continue;
+    let oy=0;for(const b of bumps)if(b.c===c&&b.r===r)oy=-Math.sin(b.t/10*Math.PI)*8;
+    tile(t,Math.round(c*TS-cam),r*TS+oy,c,r);
+  }
+  for(const o of pops){ctx.fillStyle='#ffd23f';ctx.beginPath();ctx.ellipse(o.x-cam,o.y,Math.abs(Math.cos(o.life/3))*7+2,9,0,0,7);ctx.fill()}
+  for(const e of enemies)if(e.x<cam+W+64)drawEnemy(e);
+  drawPlayer();
+  // HUD
+  text('PIP',16,24,15);text(String(score).padStart(6,'0'),16,42,15);
+  text('●×'+String(wallet).padStart(2,'0'),150,42,15,'left','#ffd23f');
+  text('WORLD',300,24,15);text('1-1',300,42,15);
+  text('LIVES',410,24,15);text('♥×'+Math.max(lives,0),410,42,15);
+  text('TIME',540,24,15);text(String(time),540,42,15);
+  if(state==='title'||state==='over'||state==='win'&&wt>30){
+    ctx.fillStyle='rgba(8,10,20,.5)';ctx.fillRect(0,0,W,H);
+    if(state==='title'){text('PIP’S PIPE DREAM',W/2,138,36,'center');text('Hop, stomp, collect coins, reach the flag.',W/2,176,15,'center');}
+    if(state==='over'){text('GAME OVER',W/2,150,40,'center','#ff6b6b');text('Score '+score,W/2,184,18,'center')}
+    if(state==='win'){text('COURSE CLEAR!',W/2,140,38,'center','#ffd23f');text('Score '+score,W/2,176,18,'center')}
+    if(state!=='win'||wt>120){text('Press Enter or tap to '+(state==='title'?'start':'play again'),W/2,222,16,'center');text('Best '+hi,W/2,248,14,'center');drawShopBtn()}
+  }
+}
 
-    // Simulated validator: returns a Promise<boolean>
-    // Uses the chance input: percentage chance to return true.
-    function validateCodeSimulated(code) {
-      const chance = Number(chanceInput.value) || 0;
-      // simulate network/processing delay 200-700ms
-      const delay = 200 + Math.random() * 500;
-      return new Promise(resolve => {
-        setTimeout(() => {
-          // success if random < chance%
-          const success = (Math.random() * 100) < chance;
-          resolve(!!success);
-        }, delay);
-      });
-    }
+/* ---------- input & loop ---------- */
+const canStart=()=>state==='title'||state==='over'||(state==='win'&&wt>120);
+addEventListener('keydown',e=>{
+  if(KM[e.code]){keys[KM[e.code]]=1;e.preventDefault()}
+  if(state==='shop'){e.preventDefault();shopKey(e.code);return}
+  if((e.code==='Enter'||e.code==='Space')&&canStart())start();
+  if(e.code==='KeyS'&&canStart())openShop();
+  if(e.code==='KeyM')muted=!muted;
+});
+addEventListener('keyup',e=>{if(KM[e.code])keys[KM[e.code]]=0});
+addEventListener('blur',()=>{for(const k in keys)keys[k]=0});
+cv.addEventListener('pointerdown',e=>{
+  const r=cv.getBoundingClientRect(),x=(e.clientX-r.left)*W/r.width,y=(e.clientY-r.top)*H/r.height;
+  if(state==='shop'){shopTap(x,y);return}
+  if(canStart()){if(y>=262&&y<=294&&x>=230&&x<=410)openShop();else start()}
+});
+document.querySelectorAll('#pad button').forEach(b=>{
+  const k=b.dataset.k;
+  b.addEventListener('pointerdown',e=>{e.preventDefault();keys[k]=1;if(canStart())start()});
+  ['pointerup','pointercancel','pointerleave'].forEach(ev=>b.addEventListener(ev,e=>{e.preventDefault();keys[k]=0}));
+});
+document.getElementById('pad').addEventListener('contextmenu',e=>e.preventDefault());
 
-    // The main loop: generate a code, add to list, validate.
-    async function iterateOnce() {
-      if (stopRequested) return false;
-      const code = generateCode();
-      const itemEl = addItem(code, 'pending');
-      // mark visually while checking
-      await sleep(60); // tiny UX delay so pending shows
-      const ok = await validateCodeSimulated(code);
-      if (ok) {
-        itemEl.classList.remove('pending');
-        itemEl.classList.add('good');
-        itemEl.querySelector('.state').textContent = 'GOOD';
-        // stop the process
-        running = false;
-        stopRequested = false;
-        nextBtn.disabled = false;
-        stopBtn.disabled = true;
-        return true;
-      } else {
-        // mark as bad
-        itemEl.classList.remove('pending');
-        itemEl.classList.add('bad');
-        itemEl.querySelector('.state').textContent = 'BAD';
-        // remove the first (oldest) code from list after small delay
-        await sleep(180);
-        removeFirstItem();
-        // continue (return false to indicate not done)
-        return false;
-      }
-    }
-
-    async function runLoop() {
-      running = true;
-      stopRequested = false;
-      nextBtn.disabled = true;
-      stopBtn.disabled = false;
-      while (!stopRequested) {
-        const done = await iterateOnce();
-        if (done) break;
-        // small throttle so UI doesn't starve
-        await sleep(80);
-      }
-      // ensure buttons reflect state
-      running = false;
-      nextBtn.disabled = false;
-      stopBtn.disabled = true;
-    }
-
-    // Basic sleep helper
-    function sleep(ms) { return new Promise(res => setTimeout(res, ms)); }
-
-    // UI event handlers
-    nextBtn.addEventListener('click', () => {
-      if (!running) {
-        // clear previous list and start
-        // depending on desired behaviour we can clear or keep; spec implies older ones erased when fail
-        // We'll keep the existing list but the loop will remove items when failures happen.
-        runLoop();
-      }
-    });
-
-    stopBtn.addEventListener('click', () => {
-      if (running) {
-        stopRequested = true;
-        // let the current check finish then stop; user can also disable immediately:
-        // To immediate stop: uncomment the line below:
-        // running = false;
-      }
-    });
-
-    // Allow pressing Enter on the chance input to start
-    chanceInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        if (!running) runLoop();
-      }
-    });
-
-    // seed the list with nothing initially; optional quick demo: keep empty
-
-    // Accessibility: announce when a code becomes GOOD
-    const observer = new MutationObserver(muts => {
-      for (const m of muts) {
-        for (const n of m.addedNodes) {
-          if (n.nodeType === 1 && n.classList.contains('good')) {
-            n.setAttribute('aria-live','polite');
-          }
-        }
-      }
-    });
-    observer.observe(listEl, { childList: true, subtree: true });
-
-  </script>
+build();
+let last=0,acc=0;
+function loop(t){acc+=Math.min(100,t-last);last=t;while(acc>=16.667){update();acc-=16.667}draw();if(state==='shop')drawShop();requestAnimationFrame(loop)}
+requestAnimationFrame(t=>{last=t;loop(t)});
+</script>
 </body>
 </html>
